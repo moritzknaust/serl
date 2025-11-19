@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "serl_launcher"
+version = "1.0.3"
+dependencies = [
+  "agentlace@https://github.com/moritzknaust/agentlace/archive/fc6be5208c9c89a805ed3ff4af2890e889ee3d69.zip",
+  "distrax",
+  "einops",
+  "flax",
+  "imageio",
+  "jax",
+  "lz4",
+  "ml_collections",
+  "opencv-python-headless",
+  "tensorflow",
+  "tensorflow_datasets",
+  "tf_keras",
+  "tqdm",
+  "typing_extensions",
+  "wandb",
+  "zmq",
+]
+requires-python = ">= 3.10"
+license = "MIT"
