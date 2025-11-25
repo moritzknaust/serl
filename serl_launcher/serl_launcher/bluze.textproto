@@ -1,0 +1,23 @@
+# proto-file: devtools/blueprint/blueprint_file.proto
+# proto-message: BlueprintFile
+# DO NOT EDIT! Regenerate the contents by running go/bluze after changing any BUILD file or the Blueprint.
+# Override the default values in third_party.serl_launcher.blueprint instead.
+
+buildable_unit: {
+  name: "third_party.serl_launcher"
+  build_pattern: "//third_party/py/serl_launcher/..."
+  test_pattern: "//third_party/py/serl_launcher/..."
+  test_tag_filter: "-nofastbuild"
+  build_tag_filter: "-nofastbuild"
+  enable_coverage: true
+  enable_presubmit: true
+  enable_continuous_build: true
+  continuous_build_email: {
+    build_cop_email_id: "third_party.serl_launcher-dev+buildgardener@google.com"
+  }
+  enable_release: false
+}
+continuous_tests: {
+  name: "third_party.serl_launcher"
+  buildable_unit_name: "third_party.serl_launcher"
+}

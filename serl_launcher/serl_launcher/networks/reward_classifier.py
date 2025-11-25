@@ -5,12 +5,11 @@ import flax.linen as nn
 from flax.training.train_state import TrainState
 from flax.training import checkpoints
 import optax
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List
 
 
 from serl_launcher.vision.resnet_v1 import resnetv1_configs, PreTrainedResNetEncoder
 from serl_launcher.common.encoding import EncodingWrapper
-from flax.core.frozen_dict import freeze, unfreeze
 
 
 class BinaryClassifier(nn.Module):
@@ -33,6 +32,7 @@ def create_classifier(
     sample: Dict,
     image_keys: List[str],
     pretrained_encoder_path: str = "./resnet10_params.pkl",
+    use_proprio: bool = True,
 ):
     pretrained_encoder = resnetv1_configs["resnetv1-10-frozen"](
         pre_pooling=True,
@@ -50,7 +50,7 @@ def create_classifier(
     }
     encoder_def = EncodingWrapper(
         encoder=encoders,
-        use_proprio=False,
+        use_proprio=use_proprio,
         enable_stacking=True,
         image_keys=image_keys,
     )
@@ -58,7 +58,6 @@ def create_classifier(
     classifier_def = BinaryClassifier(encoder_def=encoder_def)
     params = classifier_def.init(key, sample)["params"]
     classifier_def = BinaryClassifier(encoder_def=encoder_def)
-    params = freeze(params)
     classifier = TrainState.create(
         apply_fn=classifier_def.apply,
         params=params,
@@ -67,12 +66,11 @@ def create_classifier(
 
     with open(pretrained_encoder_path, "rb") as f:
         encoder_params = pkl.load(f)
-    param_count = sum(x.size for x in jax.tree_leaves(encoder_params))
+    param_count = sum(x.size for x in jax.tree.leaves(encoder_params))
     print(
         f"Loaded {param_count/1e6}M parameters from ResNet-10 pretrained on ImageNet-1K"
     )
-
-    new_params = classifier.params.unfreeze()
+    new_params = classifier.params
     for image_key in image_keys:
         if "pretrained_encoder" in new_params["encoder_def"][f"encoder_{image_key}"]:
             for k in new_params["encoder_def"][f"encoder_{image_key}"][
@@ -83,8 +81,6 @@ def create_classifier(
                         "pretrained_encoder"
                     ][k] = encoder_params[k]
                     print(f"replaced {k} in encoder_{image_key}")
-
-    new_params = freeze(new_params)
     classifier = classifier.replace(params=new_params)
     return classifier
 
@@ -94,20 +90,30 @@ def load_classifier_func(
     sample: Dict,
     image_keys: List[str],
     checkpoint_path: str,
-    step: Optional[int] = None,
+    step: int = 100,
+    pretrained_encoder_path: str = "./resnet10_params.pkl",
+    use_proprio: bool = True,
 ) -> Callable[[Dict], jnp.ndarray]:
-    """
-    Return: a function that takes in an observation
-            and returns the logits of the classifier.
-    """
-    classifier = create_classifier(key, sample, image_keys)
-    classifier = checkpoints.restore_checkpoint(
-        checkpoint_path,
-        target=classifier,
-        step=step,
-    )
-    func = lambda obs: classifier.apply_fn(
-        {"params": classifier.params}, obs, train=False
-    )
-    func = jax.jit(func)
-    return func
+  """Return: a function that takes in an observation
+
+  and returns the logits of the classifier.
+  """
+  classifier = create_classifier(
+      key,
+      sample,
+      image_keys,
+      pretrained_encoder_path=pretrained_encoder_path,
+      use_proprio=use_proprio,
+  )
+  classifier = checkpoints.restore_checkpoint(
+      checkpoint_path,
+      target=classifier,
+      step=step,
+  )
+  func = lambda obs: classifier.apply_fn(
+      {"params": classifier.params}, obs, train=False
+  )
+  func = jax.jit(func)
+  # allow inspecting the classifier object for debugging
+  func.classifier = classifier
+  return func

@@ -1,0 +1,20 @@
+include "devtools/blueprint/bluze/public/bluze.ncl";
+include bytes "third_party/py/serl_launcher/bluze.textproto" as textproto;
+
+// See go/bluze/guide before editing. To check the generated final blueprint run
+// rncl third_party/py/serl_launcher/third_party.serl_launcher.blueprint printproto blueprint_file
+
+blueprint_file = ::bluze::BlueprintFile(
+  textproto,
+
+  project_name = "third_party.serl_launcher",
+  teams_product_id = 7754845323,
+  tech_lead = ["ajinkyajain"],
+  dev_mailing_list = "third_party.serl_launcher-dev@google.com",
+  mdb_groups = ["third-party-tap-forge"],
+  buganizer_component_ids = [1253665],
+  metadata_path = "//depot/google3/third_party/py/serl_launcher/METADATA",
+  arm_variant_mode = ::blueprint::VariantMode::VARIANT_MODE_RELEASE,
+
+// Customize your blueprint here: go/blueprint/howto-write.
+);
