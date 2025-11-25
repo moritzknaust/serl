@@ -2,13 +2,12 @@ import functools
 from typing import Any, Callable, Dict, Mapping, Sequence, Tuple, Union
 
 import flax
+from flax import struct
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-from flax import struct
-
-from serl_launcher.common.typing import Params, PRNGKey
+from serl_launcher.common.typing import PRNGKey, Params
 
 nonpytree_field = functools.partial(flax.struct.field, pytree_node=False)
 
@@ -22,7 +21,7 @@ def shard_batch(batch, sharding):
         batch: A pytree of arrays.
         sharding: A jax Sharding object with shape (num_devices,).
     """
-    return jax.tree_map(
+    return jax.tree.map(
         lambda x: jax.device_put(
             x, sharding.reshape(sharding.shape[0], *((1,) * (x.ndim - 1)))
         ),
@@ -31,14 +30,18 @@ def shard_batch(batch, sharding):
 
 
 class ModuleDict(nn.Module):
-    """
-    Utility class for wrapping a dictionary of modules. This is useful when you have multiple modules that you want to
-    initialize all at once (creating a single `params` dictionary), but you want to be able to call them separately
-    later. As a bonus, the modules may have sub-modules nested inside them that share parameters (e.g. an image encoder)
-    and Flax will automatically handle this without duplicating the parameters.
+    """Utility class for wrapping a dictionary of modules.
 
-    To initialize the modules, call `init` with no `name` kwarg, and then pass the example arguments to each module as
-    additional kwargs. To call the modules, pass the name of the module as the `name` kwarg, and then pass the arguments
+    This is useful when you have multiple modules that you want to initialize all
+    at once (creating a single `params` dictionary), but you want to be able to
+    call them separately later. As a bonus, the modules may have sub-modules
+    nested inside them that share parameters (e.g. an image encoder) and Flax will
+    automatically handle this without duplicating the parameters.
+
+    To initialize the modules, call `init` with no `name` kwarg, and then pass the
+    example arguments to each module as
+    additional kwargs. To call the modules, pass the name of the module as the
+    `name` kwarg, and then pass the arguments
     to the module as additional args or kwargs.
 
     Example usage:
@@ -48,10 +51,12 @@ class ModuleDict(nn.Module):
     critic = Critic(encoder=shared_encoder)
 
     model_def = ModuleDict({"actor": actor, "critic": critic})
-    params = model_def.init(rng_key, actor=example_obs, critic=(example_obs, example_action))
+    params = model_def.init(rng_key, actor=example_obs, critic=(example_obs,
+    example_action))
 
     actor_output = model_def.apply({"params": params}, example_obs, name="actor")
-    critic_output = model_def.apply({"params": params}, example_obs, action=example_action, name="critic")
+    critic_output = model_def.apply({"params": params}, example_obs,
+    action=example_action, name="critic")
     ```
     """
 
@@ -62,8 +67,9 @@ class ModuleDict(nn.Module):
         if name is None:
             if kwargs.keys() != self.modules.keys():
                 raise ValueError(
-                    f"When `name` is not specified, kwargs must contain the arguments for each module. "
-                    f"Got kwargs keys {kwargs.keys()} but module keys {self.modules.keys()}"
+                    "When `name` is not specified, kwargs must contain the arguments"
+                    f" for each module. Got kwargs keys {kwargs.keys()} but module keys"
+                    f" {self.modules.keys()}"
                 )
             out = {}
             for key, value in kwargs.items():
@@ -79,8 +85,7 @@ class ModuleDict(nn.Module):
 
 
 class JaxRLTrainState(struct.PyTreeNode):
-    """
-    Custom TrainState class to replace `flax.training.train_state.TrainState`.
+    """Custom TrainState class to replace `flax.training.train_state.TrainState`.
 
     Adds support for holding target params and updating them via polyak
     averaging. Adds the ability to hold an rng key for dropout.
@@ -115,27 +120,27 @@ class JaxRLTrainState(struct.PyTreeNode):
 
     @staticmethod
     def _tx_tree_map(*args, **kwargs):
-        return jax.tree_map(
+        return jax.tree.map(
             *args,
             is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
             **kwargs,
         )
 
     def target_update(self, tau: float) -> "JaxRLTrainState":
-        """
-        Performs an update of the target params via polyak averaging. The new
-        target params are given by:
+        """Performs an update of the target params via polyak averaging.
+
+        The new target params are given by:
 
             new_target_params = tau * params + (1 - tau) * target_params
         """
-        new_target_params = jax.tree_map(
+        new_target_params = jax.tree.map(
             lambda p, tp: p * tau + tp * (1 - tau), self.params, self.target_params
         )
         return self.replace(target_params=new_target_params)
 
     def apply_gradients(self, *, grads: Any) -> "JaxRLTrainState":
-        """
-        Only difference from flax's TrainState is that `grads` must have
+        """Only difference from flax's TrainState is that `grads` must have
+
         `self.txs` as a tree prefix (i.e. where `self.txs` has a leaf, `grads`
         has a subtree with the same structure as `self.params`.)
         """
@@ -158,7 +163,7 @@ class JaxRLTrainState(struct.PyTreeNode):
         )
 
         # apply all the updates additively
-        updates_acc = jax.tree_map(
+        updates_acc = jax.tree.map(
             lambda *xs: jnp.sum(jnp.array(xs), axis=0), *updates_flat
         )
         new_params = optax.apply_updates(self.params, updates_acc)
@@ -170,8 +175,8 @@ class JaxRLTrainState(struct.PyTreeNode):
     def apply_loss_fns(
         self, loss_fns: Any, pmap_axis: str = None, has_aux: bool = False
     ) -> Union["JaxRLTrainState", Tuple["JaxRLTrainState", Any]]:
-        """
-        Convenience method to compute gradients based on `self.params` and apply
+        """Convenience method to compute gradients based on `self.params` and apply
+
         them using `apply_gradients`. `loss_fns` must have the same structure as
         `txs`, and each leaf must be a function that takes two arguments:
         `params` and `rng`.
@@ -180,15 +185,13 @@ class JaxRLTrainState(struct.PyTreeNode):
         updates this train state's internal rng key.
 
         Args:
-            loss_fns: loss function or pytree of loss functions with same
-                structure as `self.txs`. Each loss function must take `params`
-                as the first argument and `rng` as the second argument, and return
-                a scalar value.
-            pmap_axis: if not None, gradients (and optionally auxiliary values)
-                will be averaged over this axis
+            loss_fns: loss function or pytree of loss functions with same structure
+              as `self.txs`. Each loss function must take `params` as the first
+              argument and `rng` as the second argument, and return a scalar value.
+            pmap_axis: if not None, gradients (and optionally auxiliary values) will
+              be averaged over this axis
             has_aux: if True, each `loss_fn` returns a tuple of (loss, aux) where
-                `aux` is a pytree of auxiliary values to be returned by this
-                method.
+              `aux` is a pytree of auxiliary values to be returned by this method.
 
         Returns:
             If `has_aux` is True, returns a tuple of (new_train_state, aux).
@@ -200,7 +203,7 @@ class JaxRLTrainState(struct.PyTreeNode):
         rngs = jax.tree_util.tree_unflatten(treedef, rngs)
 
         # compute gradients
-        grads_and_aux = jax.tree_map(
+        grads_and_aux = jax.tree.map(
             lambda loss_fn, rng: jax.grad(loss_fn, has_aux=has_aux)(self.params, rng),
             loss_fns,
             rngs,
@@ -214,26 +217,26 @@ class JaxRLTrainState(struct.PyTreeNode):
             grads_and_aux = jax.lax.pmean(grads_and_aux, axis_name=pmap_axis)
 
         if has_aux:
-            grads = jax.tree_map(lambda _, x: x[0], loss_fns, grads_and_aux)
-            aux = jax.tree_map(lambda _, x: x[1], loss_fns, grads_and_aux)
+            grads = jax.tree.map(lambda _, x: x[0], loss_fns, grads_and_aux)
+            aux = jax.tree.map(lambda _, x: x[1], loss_fns, grads_and_aux)
             return self.apply_gradients(grads=grads), aux
         else:
             return self.apply_gradients(grads=grads_and_aux)
 
     @classmethod
-    def create(
-        cls, *, apply_fn, params, txs, target_params=None, rng=jax.random.PRNGKey(0)
-    ):
-        """
-        Initializes a new train state.
+    def create(cls, *, apply_fn, params, txs, target_params=None, rng=None):
+        """Initializes a new train state.
 
         Args:
-            apply_fn: The function used to apply the model, typically `model_def.apply`.
+            apply_fn: The function used to apply the model, typically
+              `model_def.apply`.
             params: The model parameters, typically from `model_def.init`.
             txs: The optimizer or pytree of optimizers.
             target_params: The target model parameters.
             rng: The rng key used to initialize the rng chain for `apply_loss_fns`.
         """
+        if rng is None:
+            rng = jax.random.PRNGKey(0)
         return cls(
             step=0,
             apply_fn=apply_fn,

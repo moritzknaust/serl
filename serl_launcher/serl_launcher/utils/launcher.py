@@ -1,24 +1,31 @@
 # !/usr/bin/env python3
 
+import enum
+from typing import Optional
+
+from agentlace.data.tfds import populate_datastore
+from agentlace.trainer import TrainerConfig
 import jax
 from jax import nn
-
-from typing import Optional
-import tensorflow_datasets as tfds
-
-from agentlace.trainer import TrainerConfig
-from agentlace.data.tfds import populate_datastore
-
-from serl_launcher.common.wandb import WandBLogger
 from serl_launcher.agents.continuous.bc import BCAgent
-from serl_launcher.agents.continuous.sac import SACAgent
 from serl_launcher.agents.continuous.drq import DrQAgent
+from serl_launcher.agents.continuous.sac import SACAgent
 from serl_launcher.agents.continuous.vice import VICEAgent
 
+# from serl_launcher.common.wandb import WandBLogger
 from serl_launcher.data.data_store import (
     MemoryEfficientReplayBufferDataStore,
     ReplayBufferDataStore,
 )
+import tensorflow_datasets as tfds
+
+
+class ReplayBufferType(enum.Enum):
+    """Type of replay buffer."""
+
+    REPLAY_BUFFER = "replay_buffer"
+    MEMORY_EFFICIENT_REPLAY_BUFFER = "memory_efficient_replay_buffer"
+
 
 ##############################################################################
 
@@ -47,7 +54,7 @@ def make_bc_agent(
     )
 
 
-def make_sac_agent(seed, sample_obs, sample_action, discount=0.99):
+def make_sac_agent(seed, sample_obs, sample_action):
     return SACAgent.create_states(
         jax.random.PRNGKey(seed),
         sample_obs,
@@ -69,7 +76,7 @@ def make_sac_agent(seed, sample_obs, sample_action, discount=0.99):
             "hidden_dims": [256, 256],
         },
         temperature_init=1e-2,
-        discount=discount,
+        discount=0.99,
         backup_entropy=False,
         critic_ensemble_size=10,
         critic_subsample_size=2,
@@ -82,7 +89,7 @@ def make_drq_agent(
     sample_action,
     image_keys=("image",),
     encoder_type="small",
-    discount=0.96,
+    enable_stacking=True,
 ):
     agent = DrQAgent.create_drq(
         jax.random.PRNGKey(seed),
@@ -108,10 +115,11 @@ def make_drq_agent(
             "hidden_dims": [256, 256],
         },
         temperature_init=1e-2,
-        discount=discount,
+        discount=0.98,  # 0.96 from HIL-SERL, or 0.99 for 100-step episodes
         backup_entropy=False,
         critic_ensemble_size=10,
         critic_subsample_size=2,
+        enable_stacking=enable_stacking,
     )
     return agent
 
@@ -124,7 +132,6 @@ def make_vice_agent(
     image_keys=("image",),
     vice_image_keys=("image",),
     encoder_type="small",
-    discount=0.96,
 ):
     agent = VICEAgent.create_vice(
         jax.random.PRNGKey(seed),
@@ -160,7 +167,7 @@ def make_vice_agent(
             "hidden_dims": [256, 256],
         },
         temperature_init=1e-2,
-        discount=discount,
+        discount=0.96,  # 0.99
         backup_entropy=False,
         critic_ensemble_size=10,
         critic_subsample_size=2,
@@ -172,9 +179,27 @@ def make_trainer_config(port_number: int = 5488, broadcast_port: int = 5489):
     return TrainerConfig(
         port_number=port_number,
         broadcast_port=broadcast_port,
-        request_types=["send-stats"],
-        # experimental_pipeline_port=5547, # experimental ds update
+        request_types=["send-stats", "send-eval-stats"],
     )
+
+
+# def make_wandb_logger(
+#     project: str = "agentlace",
+#     description: str = "serl_launcher",
+#     debug: bool = False,
+# ):
+#   wandb_config = WandBLogger.get_default_config()
+#   wandb_config.update({
+#       "project": project,
+#       "exp_descriptor": description,
+#       "tag": description,
+#   })
+#   wandb_logger = WandBLogger(
+#       wandb_config=wandb_config,
+#       variant={},
+#       debug=debug,
+#   )
+#   return wandb_logger
 
 
 def make_wandb_logger(
@@ -182,40 +207,29 @@ def make_wandb_logger(
     description: str = "serl_launcher",
     debug: bool = False,
 ):
-    wandb_config = WandBLogger.get_default_config()
-    wandb_config.update(
-        {
-            "project": project,
-            "exp_descriptor": description,
-            "tag": description,
-        }
-    )
-    wandb_logger = WandBLogger(
-        wandb_config=wandb_config,
-        variant={},
-        debug=debug,
-    )
-    return wandb_logger
+    raise NotImplementedError("wandb is not supported")
 
 
 def make_replay_buffer(
     env,
     capacity: int = 1000000,
     rlds_logger_path: Optional[str] = None,
-    type: str = "replay_buffer",
-    image_keys: list = [],  # used only type=="memory_efficient_replay_buffer"
+    buffer_type: ReplayBufferType = ReplayBufferType.REPLAY_BUFFER,
+    image_keys: list = [],  # used only buffer_type=="memory_efficient_replay_buffer"
     preload_rlds_path: Optional[str] = None,
     preload_data_transform: Optional[callable] = None,
 ):
-    """
-    This is the high-level helper function to
+    """This is the high-level helper function to
+
     create a replay buffer for the given environment.
 
     Args:
+
     - env: gym or gymasium environment
     - capacity: capacity of the replay buffer
     - rlds_logger_path: path to save RLDS logs
-    - type: support only for "replay_buffer" and "memory_efficient_replay_buffer"
+    - buffer_type: support only for "replay_buffer" and
+      "memory_efficient_replay_buffer"
     - image_keys: list of image keys, used only "memory_efficient_replay_buffer"
     - preload_rlds_path: path to preloaded RLDS trajectories
     - preload_data_transform: data transformation function for preloaded RLDS data
@@ -239,14 +253,15 @@ def make_replay_buffer(
     else:
         rlds_logger = None
 
-    if type == "replay_buffer":
+    if buffer_type == ReplayBufferType.REPLAY_BUFFER:
         replay_buffer = ReplayBufferDataStore(
             env.observation_space,
             env.action_space,
             capacity=capacity,
             rlds_logger=rlds_logger,
         )
-    elif type == "memory_efficient_replay_buffer":
+    elif buffer_type == ReplayBufferType.MEMORY_EFFICIENT_REPLAY_BUFFER:
+        assert hasattr(env, "chunking_enabled")
         replay_buffer = MemoryEfficientReplayBufferDataStore(
             env.observation_space,
             env.action_space,
@@ -255,7 +270,7 @@ def make_replay_buffer(
             image_keys=image_keys,
         )
     else:
-        raise ValueError(f"Unsupported replay_buffer_type: {type}")
+        raise ValueError(f"Unsupported replay_buffer_type: {buffer_type}")
 
     if preload_rlds_path:
         print(f" - Preloaded {preload_rlds_path} to replay buffer")
