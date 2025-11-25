@@ -1,18 +1,21 @@
 import collections
-from typing import Any, Iterator, Optional, Sequence, Tuple, Union
+import pickle
+from typing import Optional, Union
 
-import gym
+import gymnasium as gym
 import jax
 import numpy as np
 from serl_launcher.data.dataset import Dataset, DatasetDict
+
+from google3.pyglib import gfile
 
 
 def _init_replay_dict(
     obs_space: gym.Space, capacity: int
 ) -> Union[np.ndarray, DatasetDict]:
-    if isinstance(obs_space, gym.spaces.Box):
+    if isinstance(obs_space, gym.spaces.box.Box):
         return np.empty((capacity, *obs_space.shape), dtype=obs_space.dtype)
-    elif isinstance(obs_space, gym.spaces.Dict):
+    elif isinstance(obs_space, gym.spaces.dict.Dict):
         data_dict = {}
         for k, v in obs_space.spaces.items():
             data_dict[k] = _init_replay_dict(v, capacity)
@@ -27,17 +30,26 @@ def _insert_recursively(
     if isinstance(dataset_dict, np.ndarray):
         dataset_dict[insert_index] = data_dict
     elif isinstance(dataset_dict, dict):
-        assert dataset_dict.keys() == data_dict.keys(), (
-            dataset_dict.keys(),
-            data_dict.keys(),
-        )
+        assert (
+            dataset_dict.keys() == data_dict.keys()
+        ), f"Dict keys are different {dataset_dict.keys()} and {data_dict.keys()}"
         for k in dataset_dict.keys():
             _insert_recursively(dataset_dict[k], data_dict[k], insert_index)
     else:
         raise TypeError()
 
 
+def _get_item_recursively(dataset_dict: DatasetDict, index: int):
+    if isinstance(dataset_dict, np.ndarray):
+        return dataset_dict[index]
+    elif isinstance(dataset_dict, dict):
+        return {k: _get_item_recursively(v, index) for k, v in dataset_dict.items()}
+    else:
+        raise TypeError()
+
+
 class ReplayBuffer(Dataset):
+
     def __init__(
         self,
         observation_space: gym.Space,
@@ -47,7 +59,6 @@ class ReplayBuffer(Dataset):
     ):
         if next_observation_space is None:
             next_observation_space = observation_space
-
         observation_data = _init_replay_dict(observation_space, capacity)
         next_observation_data = _init_replay_dict(next_observation_space, capacity)
         dataset_dict = dict(
@@ -73,6 +84,18 @@ class ReplayBuffer(Dataset):
 
         self._insert_index = (self._insert_index + 1) % self._capacity
         self._size = min(self._size + 1, self._capacity)
+
+    def save_replay_buffer(self, path: str):
+        transitions = []
+        for i in range(self._size):
+            data = {
+                key: _get_item_recursively(value, i)
+                for key, value in self.dataset_dict.items()
+            }
+            transitions.append(data)
+
+        with gfile.Open(path, "wb") as f:
+            pickle.dump(transitions, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def get_iterator(self, queue_size: int = 2, sample_args: dict = {}, device=None):
         # See https://flax.readthedocs.io/en/latest/_modules/flax/jax_utils.html#prefetch_to_device

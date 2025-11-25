@@ -1,0 +1,28 @@
+# Format: google3/devtools/metadata/metadata.proto (go/google3metadata)
+name: "serl_launcher"
+description: "SERL: A Software Suite for Sample-Efficient Robotic Reinforcement Learning"
+third_party {
+  version: "6c320f6b836dbcb19a208b3e5a95a3bede8b8393"
+  last_upgrade_date {
+    year: 2024
+    month: 5
+    day: 7
+  }
+  identifier: {
+    type: "Git"
+    value: "https://github.com/rail-berkeley/serl"
+    upstream_paths: "/serl_launcher"
+    version: "6c320f6b836dbcb19a208b3e5a95a3bede8b8393"
+    closest_version: "v0.1.1"
+    primary_source: true
+  }
+  identifier: {
+    type: "PyPI"
+    omission_reason: "Only on Git. Not published to PyPI."
+  }
+}
+presubmit: {
+  check_tests: {
+    project: "third_party.serl_launcher"
+  }
+}

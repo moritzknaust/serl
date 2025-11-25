@@ -1,16 +1,14 @@
 from threading import Lock
-from typing import Union, Iterable
+from typing import Iterable, Union
+from typing import List, Optional, TypeVar
 
-import gym
+from agentlace.data.data_store import DataStoreBase
+import gymnasium as gym
 import jax
-from serl_launcher.data.replay_buffer import ReplayBuffer
 from serl_launcher.data.memory_efficient_replay_buffer import (
     MemoryEfficientReplayBuffer,
 )
-
-from agentlace.data.data_store import DataStoreBase
-
-from typing import List, Optional, TypeVar
+from serl_launcher.data.replay_buffer import ReplayBuffer
 
 # import oxe_envlogger if it is installed
 try:
@@ -24,6 +22,7 @@ except ImportError:
 
 
 class ReplayBufferDataStore(ReplayBuffer, DataStoreBase):
+
     def __init__(
         self,
         observation_space: gym.Space,
@@ -81,6 +80,7 @@ class ReplayBufferDataStore(ReplayBuffer, DataStoreBase):
 
 
 class MemoryEfficientReplayBufferDataStore(MemoryEfficientReplayBuffer, DataStoreBase):
+
     def __init__(
         self,
         observation_space: gym.Space,
@@ -148,8 +148,8 @@ def populate_data_store(
     data_store: DataStoreBase,
     demos_path: str,
 ):
-    """
-    Utility function to populate demonstrations data into data_store.
+    """Utility function to populate demonstrations data into data_store.
+
     :return data_store
     """
     import pickle as pkl
@@ -167,10 +167,10 @@ def populate_data_store_with_z_axis_only(
     data_store: DataStoreBase,
     demos_path: str,
 ):
-    """
-    Utility function to populate demonstrations data into data_store.
-    This will remove the x and y cartesian coordinates from the state.
-    :return data_store
+    """Utility function to populate demonstrations data into data_store.
+
+    This will remove the x and y cartesian coordinates from the state. :return
+    data_store
     """
     import pickle as pkl
     import numpy as np
