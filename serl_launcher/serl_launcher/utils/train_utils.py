@@ -2,6 +2,8 @@ from collections import defaultdict
 import os
 import pickle as pkl
 from flax.core import frozen_dict
+from flax import traverse_util
+from safetensors.flax import load_file 
 import imageio
 import jax
 import jax.numpy as jnp
@@ -74,10 +76,9 @@ def load_resnet10_params(agent, image_keys=("image",), public=True):
 
     :return: agent with pretrained resnet10 params
     """
-    file_name = "resnet10_params.pkl"
+    file_name = "resnet10_params.safetensors"
     if not public:  # if github repo is not public, load from local file
-        with open(file_name, "rb") as f:
-            encoder_params = pkl.load(f)
+        encoder_params = load_file(file_name)
     else:  # when repo is released, download from url
         # Construct the full path to the file
         file_path = os.path.expanduser("~/.serl/")
@@ -88,7 +89,7 @@ def load_resnet10_params(agent, image_keys=("image",), public=True):
         if os.path.exists(file_path):
             print(f"The ResNet-10 weights already exist at '{file_path}'.")
         else:
-            url = f"https://github.com/rail-berkeley/serl/releases/download/resnet10/{file_name}"
+            url = f"https://github.com//moritzknaust/serl/releases/download/resnet10-safe/{file_name}"
             print(f"Downloading file from {url}")
 
             # Streaming download with progress bar
@@ -108,8 +109,7 @@ def load_resnet10_params(agent, image_keys=("image",), public=True):
                 raise RuntimeError(e)
             print("Download complete!")
 
-        with open(file_path, "rb") as f:
-            encoder_params = pkl.load(f)
+        encoder_params = load_file(file_path)
 
     param_count = sum(x.size for x in jax.tree.leaves(encoder_params))
     print(
