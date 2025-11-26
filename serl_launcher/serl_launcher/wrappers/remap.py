@@ -1,7 +1,6 @@
 from typing import Any
 
-import gym
-import gym.spaces
+import gymnasium as gym
 import jax
 
 
@@ -31,4 +30,4 @@ class RemapWrapper(gym.ObservationWrapper):
             raise TypeError(f"Unsupported type {type(new_structure)}")
 
     def observation(self, observation):
-        return jax.tree_map(lambda x: observation[x], self.new_structure)
+        return jax.tree.map(lambda x: observation[x], self.new_structure)

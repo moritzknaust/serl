@@ -1,7 +1,6 @@
-import os
-from typing import List, Optional
+from typing import List
 
-import gym
+import gymnasium as gym
 import imageio
 import numpy as np
 import tensorflow as tf
@@ -61,6 +60,7 @@ def compose_frames(
 
 
 class VideoRecorder(gym.Wrapper):
+
     def __init__(
         self,
         env: gym.Env,

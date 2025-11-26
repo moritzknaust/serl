@@ -1,29 +1,28 @@
+from collections import OrderedDict
 import copy
-import jax
-import jax.numpy as jnp
-from typing import Optional, Tuple, Iterable, Dict
 from functools import partial
+from typing import Dict, Iterable, Optional, Tuple
 from flax.core import frozen_dict
 import flax.linen as nn
-from collections import OrderedDict
+import jax
+import jax.numpy as jnp
 import optax
-
-from serl_launcher.agents.continuous.sac import SACAgent
 from serl_launcher.agents.continuous.drq import DrQAgent
-from serl_launcher.common.encoding import EncodingWrapper
-from serl_launcher.common.typing import Batch, Data, Params, PRNGKey
-from serl_launcher.common.optimizers import make_optimizer
+from serl_launcher.agents.continuous.sac import SACAgent
 from serl_launcher.common.common import JaxRLTrainState, ModuleDict, nonpytree_field
-from serl_launcher.vision.data_augmentations import batched_random_crop
+from serl_launcher.common.encoding import EncodingWrapper
+from serl_launcher.common.optimizers import make_optimizer
+from serl_launcher.common.typing import Batch, Data, PRNGKey, Params
 from serl_launcher.networks.actor_critic_nets import Critic, Policy, ensemblize
+from serl_launcher.networks.classifier import BinaryClassifier
 from serl_launcher.networks.lagrange import GeqLagrangeMultiplier
 from serl_launcher.networks.mlp import MLP
-from serl_launcher.networks.classifier import BinaryClassifier
-
 from serl_launcher.utils.train_utils import _unpack, concat_batches
+from serl_launcher.vision.data_augmentations import batched_random_crop
 
 
 class VICEAgent(DrQAgent):
+
     @classmethod
     def create(
         cls,
@@ -145,9 +144,7 @@ class VICEAgent(DrQAgent):
         image_keys: Iterable[str] = ("image",),
         **kwargs,
     ):
-        """
-        Create a new pixel-based agent, with no encoders.
-        """
+        """Create a new pixel-based agent, with no encoders."""
 
         policy_network_kwargs["activate_final"] = True
         critic_network_kwargs["activate_final"] = True
@@ -314,10 +311,15 @@ class VICEAgent(DrQAgent):
 
     def data_augmentation_fn(self, rng, observations):
         for pixel_key in self.config["image_keys"]:
+            # 3 for (image_width, image_height, image_channels)
+            num_batch_dims = len(observations[pixel_key].shape) - 3
             observations = observations.copy(
                 add_or_replace={
                     pixel_key: batched_random_crop(
-                        observations[pixel_key], rng, padding=4, num_batch_dims=2
+                        observations[pixel_key],
+                        rng,
+                        padding=4,
+                        num_batch_dims=num_batch_dims,
                     )
                 }
             )
@@ -331,8 +333,8 @@ class VICEAgent(DrQAgent):
         grad_params: Optional[Params] = None,
         train: bool = True,
     ):
-        """
-        Forward pass for pre-trained encoder network.
+        """Forward pass for pre-trained encoder network.
+
         Pass grad_params to use non-default parameters (e.g. for gradients).
         """
         if train:
@@ -360,12 +362,13 @@ class VICEAgent(DrQAgent):
         batch,
         pmap_axis: Optional[str] = None,
     ):
-        """
-        update the VICE reward classifier using the BCE loss.
-        addtional regularization techniques are also used: mixup, label smoothing, and gradient penalty regularization
-        to prevent GAN mode collapse.
+        """update the VICE reward classifier using the BCE loss.
 
-        NOTE: assumes that the second half of the batch contains the goal images, so labels = 1
+        additional regularization techniques are also used: mixup, label smoothing,
+        and gradient penalty regularization to prevent GAN mode collapse.
+
+        NOTE: assumes that the second half of the batch contains the goal images, so
+        labels = 1
         """
         new_agent = self
         rng = new_agent.state.rng
@@ -373,9 +376,7 @@ class VICEAgent(DrQAgent):
             batch = _unpack(batch)
 
         def mixup_data_rng(key_0, key_1, x: jnp.ndarray, y: jnp.ndarray, alpha=1):
-            """
-            performs mixup regularization on the input images and labels
-            """
+            """performs mixup regularization on the input images and labels"""
             if alpha > 0:
                 lam = jax.random.beta(key_0, alpha, alpha)
             else:
@@ -572,8 +573,7 @@ class VICEAgent(DrQAgent):
         utd_ratio: int,
         pmap_axis: Optional[str] = None,
     ) -> Tuple["DrQAgent", dict]:
-        """
-        Fast JITted high-UTD version of `.update`.
+        """Fast JITted high-UTD version of `.update`.
 
         Splits the batch into minibatches, performs `utd_ratio` critic
         (and target) updates, and then one actor/temperature update.

@@ -1,16 +1,14 @@
-import os
-import pickle as pkl
-import requests
 from collections import defaultdict
-from tqdm import tqdm
-
+import os
+from flax.core import frozen_dict
+from flax import traverse_util
+from safetensors.flax import load_file
 import imageio
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tensorflow as tf
-import wandb
-from flax.core import frozen_dict
+import requests
+from tqdm import tqdm
 
 
 def concat_batches(offline_batch, online_batch, axis=1):
@@ -31,19 +29,25 @@ def concat_batches(offline_batch, online_batch, axis=1):
     return frozen_dict.freeze(batch)
 
 
+# def load_recorded_video(
+#     video_path: str,
+# ):
+#   with tf.io.gfile.GFile(video_path, "rb") as f:
+#     video = np.array(imageio.mimread(f, "MP4")).transpose((0, 3, 1, 2))
+#     assert video.shape[1] == 3, "Numpy array should be (T, C, H, W)"
+
+#   return wandb.Video(video, fps=20)
+
+
 def load_recorded_video(
     video_path: str,
 ):
-    with tf.io.gfile.GFile(video_path, "rb") as f:
-        video = np.array(imageio.mimread(f, "MP4")).transpose((0, 3, 1, 2))
-        assert video.shape[1] == 3, "Numpy array should be (T, C, H, W)"
-
-    return wandb.Video(video, fps=20)
+    return NotImplementedError("wandb is not available.")
 
 
 def _unpack(batch):
-    """
-    Helps to minimize CPU to GPU transfer.
+    """Helps to minimize CPU to GPU transfer.
+
     Assuming that if next_observation is missing, it's combined with observation:
 
     :param batch: a batch of data from the replay buffer, a dataset dict
@@ -67,14 +71,13 @@ def _unpack(batch):
 
 
 def load_resnet10_params(agent, image_keys=("image",), public=True):
-    """
-    Load pretrained resnet10 params from github release to an agent.
+    """Load pretrained resnet10 params from github release to an agent.
+
     :return: agent with pretrained resnet10 params
     """
-    file_name = "resnet10_params.pkl"
+    file_name = "resnet10_params.safetensors"
     if not public:  # if github repo is not public, load from local file
-        with open(file_name, "rb") as f:
-            encoder_params = pkl.load(f)
+        encoder_params = load_file(file_name)
     else:  # when repo is released, download from url
         # Construct the full path to the file
         file_path = os.path.expanduser("~/.serl/")
@@ -85,7 +88,7 @@ def load_resnet10_params(agent, image_keys=("image",), public=True):
         if os.path.exists(file_path):
             print(f"The ResNet-10 weights already exist at '{file_path}'.")
         else:
-            url = f"https://github.com/rail-berkeley/serl/releases/download/resnet10/{file_name}"
+            url = f"https://github.com/moritzknaust/serl/releases/download/resnet10-safe/{file_name}"
             print(f"Downloading file from {url}")
 
             # Streaming download with progress bar
@@ -105,12 +108,13 @@ def load_resnet10_params(agent, image_keys=("image",), public=True):
                 raise RuntimeError(e)
             print("Download complete!")
 
-        with open(file_path, "rb") as f:
-            encoder_params = pkl.load(f)
+        encoder_params = load_file(file_path)
+    encoder_params = traverse_util.unflatten_dict(encoder_params, sep="/")
 
-    param_count = sum(x.size for x in jax.tree_leaves(encoder_params))
+    param_count = sum(x.size for x in jax.tree.leaves(encoder_params))
     print(
-        f"Loaded {param_count/1e6}M parameters from ResNet-10 pretrained on ImageNet-1K"
+        f"Loaded {param_count/1e6}M parameters from ResNet-10 pretrained on"
+        " ImageNet-1K"
     )
 
     new_params = agent.state.params

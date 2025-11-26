@@ -6,7 +6,6 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from serl_launcher.vision.film_conditioning_layer import FilmConditioning
 
 ModuleDef = Any
@@ -88,9 +87,7 @@ class SpatialLearnedEmbeddings(nn.Module):
 
     @nn.compact
     def __call__(self, features):
-        """
-        features is B x H x W X C
-        """
+        """features is B x H x W X C"""
         kernel = self.param(
             "kernel",
             self.kernel_init,
@@ -117,6 +114,7 @@ class SpatialLearnedEmbeddings(nn.Module):
 
 
 class MyGroupNorm(nn.GroupNorm):
+
     def __call__(self, x):
         if x.ndim == 3:
             x = x[jnp.newaxis]
@@ -381,10 +379,19 @@ resnetv1_configs = {
         ResNetEncoder, stage_sizes=(1, 1, 1, 1), block_cls=ResNetBlock
     ),
     "resnetv1-10-frozen": ft.partial(
-        ResNetEncoder, stage_sizes=(1, 1, 1, 1), block_cls=ResNetBlock, pre_pooling=True
+        ResNetEncoder,
+        stage_sizes=(1, 1, 1, 1),
+        block_cls=ResNetBlock,
+        pre_pooling=True,
     ),
     "resnetv1-18": ft.partial(
         ResNetEncoder, stage_sizes=(2, 2, 2, 2), block_cls=ResNetBlock
+    ),
+    "resnetv1-18-frozen": ft.partial(
+        ResNetEncoder,
+        stage_sizes=(2, 2, 2, 2),
+        block_cls=ResNetBlock,
+        pre_pooling=True,
     ),
     "resnetv1-34": ft.partial(
         ResNetEncoder, stage_sizes=(3, 4, 6, 3), block_cls=ResNetBlock

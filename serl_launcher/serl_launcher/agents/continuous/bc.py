@@ -2,13 +2,12 @@ from functools import partial
 from typing import Any, Iterable, Optional
 
 import flax
+from flax.core import FrozenDict
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from flax.core import FrozenDict
-
 from serl_launcher.common.common import JaxRLTrainState, ModuleDict, nonpytree_field
 from serl_launcher.common.encoding import EncodingWrapper
 from serl_launcher.common.typing import Batch, PRNGKey
@@ -24,10 +23,15 @@ class BCAgent(flax.struct.PyTreeNode):
 
     def data_augmentation_fn(self, rng, observations):
         for pixel_key in self.config["image_keys"]:
+            # 3 for (image_width, image_height, image_channels)
+            num_batch_dims = len(observations[pixel_key].shape) - 3
             observations = observations.copy(
                 add_or_replace={
                     pixel_key: batched_random_crop(
-                        observations[pixel_key], rng, padding=4, num_batch_dims=2
+                        observations[pixel_key],
+                        rng,
+                        padding=4,
+                        num_batch_dims=num_batch_dims,
                     )
                 }
             )

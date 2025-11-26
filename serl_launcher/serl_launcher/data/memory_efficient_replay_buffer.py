@@ -1,15 +1,15 @@
 import copy
 from typing import Iterable, Optional, Tuple
 
-import gym
+from flax.core import frozen_dict
+import gymnasium as gym
 import numpy as np
 from serl_launcher.data.dataset import DatasetDict, _sample
 from serl_launcher.data.replay_buffer import ReplayBuffer
-from flax.core import frozen_dict
-from gym.spaces import Box
 
 
 class MemoryEfficientReplayBuffer(ReplayBuffer):
+
     def __init__(
         self,
         observation_space: gym.Space,
@@ -30,7 +30,7 @@ class MemoryEfficientReplayBuffer(ReplayBuffer):
             self._unstacked_dim_size = pixel_obs_space.shape[-1]
             low = pixel_obs_space.low[0]
             high = pixel_obs_space.high[0]
-            unstacked_pixel_obs_space = Box(
+            unstacked_pixel_obs_space = gym.spaces.Box(
                 low=low, high=high, dtype=pixel_obs_space.dtype
             )
             observation_space.spaces[pixel_key] = unstacked_pixel_obs_space
@@ -102,7 +102,7 @@ class MemoryEfficientReplayBuffer(ReplayBuffer):
             keys: Keys to sample.
             indx: Take indices instead of sampling.
             pack_obs_and_next_obs: whether to pack img and next_img into one image.
-                It's useful when they have overlapping frames.
+              It's useful when they have overlapping frames.
 
         Returns:
             A frozen dictionary.
@@ -120,8 +120,11 @@ class MemoryEfficientReplayBuffer(ReplayBuffer):
                         indx[i] = self.np_random.integers(len(self))
                     else:
                         indx[i] = self.np_random.randint(len(self))
+            # indx = self.np_random.choice(np.arange(self._size), size=batch_size, replace=False)  # TODO: do smarter implementation
         else:
-            raise NotImplementedError()
+            assert (
+                len(indx) == batch_size
+            ), "Length of provided indx must be equal to batch_size."
 
         if keys is None:
             keys = self.dataset_dict.keys()
@@ -133,6 +136,7 @@ class MemoryEfficientReplayBuffer(ReplayBuffer):
 
         batch = super().sample(batch_size, keys, indx)
         batch = batch.unfreeze()
+        batch["sampled_indices"] = indx
 
         obs_keys = self.dataset_dict["observations"].keys()
         obs_keys = list(obs_keys)
