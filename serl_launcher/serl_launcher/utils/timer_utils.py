@@ -1,10 +1,11 @@
 """Timer utility."""
 
-import time
 from collections import defaultdict
+import time
 
 
 class _TimerContextManager:
+
     def __init__(self, timer: "Timer", key: str):
         self.timer = timer
         self.key = key
@@ -17,6 +18,7 @@ class _TimerContextManager:
 
 
 class Timer:
+
     def __init__(self):
         self.reset()
 
@@ -37,9 +39,11 @@ class Timer:
         self.times[key] += time.time() - self.start_times[key]
         del self.start_times[key]
 
+    def is_ticking(self, key):
+        return key in self.start_times
+
     def context(self, key):
-        """
-        Use this like:
+        """Use this like:
 
         with timer.context("key"):
             # do stuff

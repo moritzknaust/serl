@@ -1,15 +1,15 @@
 from typing import Dict, Iterable, Optional, Tuple
 
+from einops import rearrange, repeat
 import flax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-from einops import rearrange, repeat
 
 
 class EncodingWrapper(nn.Module):
-    """
-    Encodes observations into a single flat encoding, adding additional
+    """Encodes observations into a single flat encoding, adding additional
+
     functionality for adding proprioception and stopping the gradient.
 
     Args:
@@ -19,7 +19,9 @@ class EncodingWrapper(nn.Module):
 
     encoder: nn.Module
     use_proprio: bool
-    proprio_latent_dim: int = 64
+    # TODO(gautamsalhotra) expose this variable? I changed from 64 to 16
+    # for classifier. Might have an adverse effect on the drq agent?
+    proprio_latent_dim: int = 16
     enable_stacking: bool = False
     image_keys: Iterable[str] = ("image",)
 
@@ -73,17 +75,17 @@ class EncodingWrapper(nn.Module):
 
 
 class GCEncodingWrapper(nn.Module):
-    """
-    Encodes observations and goals into a single flat encoding. Handles all the
-    logic about when/how to combine observations and goals.
+    """Encodes observations and goals into a single flat encoding.
+
+    Handles all the logic about when/how to combine observations and goals.
 
     Takes a tuple (observations, goals) as input.
 
     Args:
         encoder: The encoder network for observations.
-        goal_encoder: The encoder to use for goals (optional). If None, early
-            goal concatenation is used, i.e. the goal is concatenated to the
-            observation channel-wise before passing it through the encoder.
+        goal_encoder: The encoder to use for goals (optional). If None, early goal
+          concatenation is used, i.e. the goal is concatenated to the observation
+          channel-wise before passing it through the encoder.
         use_proprio: Whether to concatenate proprioception (after encoding).
         stop_gradient: Whether to stop the gradient after the encoder.
     """
@@ -138,10 +140,10 @@ class GCEncodingWrapper(nn.Module):
 
 
 class LCEncodingWrapper(nn.Module):
-    """
-    Encodes observations and language instructions into a single flat encoding.
+    """Encodes observations and language instructions into a single flat encoding.
 
-    Takes a tuple (observations, goals) as input, where goals contains the language instruction.
+    Takes a tuple (observations, goals) as input, where goals contains the
+    language instruction.
 
     Args:
         encoder: The encoder network for observations.

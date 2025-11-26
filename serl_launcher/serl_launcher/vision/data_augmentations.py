@@ -28,7 +28,9 @@ def batched_random_crop(img, rng, *, padding, num_batch_dims: int = 1):
     rngs = jax.random.split(rng, img.shape[0])
 
     img = jax.vmap(
-        lambda i, r: random_crop(i, r, padding=padding), in_axes=(0, 0), out_axes=0
+        lambda i, r: random_crop(i, r, padding=padding),
+        in_axes=(0, 0),
+        out_axes=0,
     )(img, rngs)
 
     # Restore batch dims
@@ -43,11 +45,13 @@ def _maybe_apply(apply_fn, inputs, rng, apply_prob):
 
 def _depthwise_conv2d(inputs, kernel, strides, padding):
     """Computes a depthwise conv2d in Jax.
+
     Args:
         inputs: an NHWC tensor with N=1.
         kernel: a [H", W", 1, C] tensor.
         strides: a 2d tensor.
         padding: "SAME" or "VALID".
+
     Returns:
         The depthwise convolution of inputs with kernel, as [H, W, C].
     """
@@ -91,7 +95,11 @@ def _random_gaussian_blur(
     def _apply(image):
         (sigma_rng,) = jax.random.split(transform_rng, 1)
         sigma = jax.random.uniform(
-            sigma_rng, shape=(), minval=sigma_min, maxval=sigma_max, dtype=jnp.float32
+            sigma_rng,
+            shape=(),
+            minval=sigma_min,
+            maxval=sigma_max,
+            dtype=jnp.float32,
         )
         return _gaussian_blur_single_image(image, kernel_size, padding, sigma)
 
@@ -100,14 +108,17 @@ def _random_gaussian_blur(
 
 def rgb_to_hsv(r, g, b):
     """Converts R, G, B  values to H, S, V values.
+
     Reference TF implementation:
     https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/kernels/adjust_saturation_op.cc
     Only input values between 0 and 1 are guaranteed to work properly, but this
     function complies with the TF implementation outside of this range.
+
     Args:
         r: A tensor representing the red color component as floats.
         g: A tensor representing the green color component as floats.
         b: A tensor representing the blue color component as floats.
+
     Returns:
         H, S, V values, each as tensors of shape [...] (same as the input without
         the last dimension).
@@ -130,14 +141,17 @@ def rgb_to_hsv(r, g, b):
 
 def hsv_to_rgb(h, s, v):
     """Converts H, S, V values to an R, G, B tuple.
+
     Reference TF implementation:
     https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/kernels/adjust_saturation_op.cc
     Only input values between 0 and 1 are guaranteed to work properly, but this
     function complies with the TF implementation outside of this range.
+
     Args:
         h: A float tensor of arbitrary shape for the hue (0-1 values).
         s: A float tensor of the same shape for the saturation (0-1 values).
         v: A float tensor of the same shape for the value channel (0-1 values).
+
     Returns:
         An (r, g, b) tuple, each with the same dimension as the inputs.
     """
@@ -149,19 +163,25 @@ def hsv_to_rgb(h, s, v):
     hcat = jnp.floor(dh).astype(jnp.int32)
     rr = (
         jnp.where(
-            (hcat == 0) | (hcat == 5), c, jnp.where((hcat == 1) | (hcat == 4), x, 0)
+            (hcat == 0) | (hcat == 5),
+            c,
+            jnp.where((hcat == 1) | (hcat == 4), x, 0),
         )
         + m
     )
     gg = (
         jnp.where(
-            (hcat == 1) | (hcat == 2), c, jnp.where((hcat == 0) | (hcat == 3), x, 0)
+            (hcat == 1) | (hcat == 2),
+            c,
+            jnp.where((hcat == 0) | (hcat == 3), x, 0),
         )
         + m
     )
     bb = (
         jnp.where(
-            (hcat == 3) | (hcat == 4), c, jnp.where((hcat == 2) | (hcat == 5), x, 0)
+            (hcat == 3) | (hcat == 4),
+            c,
+            jnp.where((hcat == 2) | (hcat == 5), x, 0),
         )
         + m
     )
@@ -169,7 +189,7 @@ def hsv_to_rgb(h, s, v):
 
 
 def adjust_brightness(rgb_tuple, delta):
-    return jax.tree_map(lambda x: x + delta, rgb_tuple)
+    return jax.tree.map(lambda x: x + delta, rgb_tuple)
 
 
 def adjust_contrast(image, factor):
@@ -177,7 +197,7 @@ def adjust_contrast(image, factor):
         mean = jnp.mean(channel, axis=(-2, -1), keepdims=True)
         return factor * (channel - mean) + mean
 
-    return jax.tree_map(_adjust_contrast_channel, image)
+    return jax.tree.map(_adjust_contrast_channel, image)
 
 
 def adjust_saturation(h, s, v, factor):
@@ -256,7 +276,7 @@ def color_transform(
 
         def cond_fn(args, i):
             def clip(args):
-                return jax.tree_map(lambda arg: jnp.clip(arg, 0.0, 1.0), args)
+                return jax.tree.map(lambda arg: jnp.clip(arg, 0.0, 1.0), args)
 
             out = jax.lax.cond(
                 should_apply & should_apply_color & (i == idx),
@@ -275,7 +295,7 @@ def color_transform(
     random_hue_cond = _make_cond(_random_hue, idx=3)
 
     def _color_jitter(x):
-        rgb_tuple = tuple(jax.tree_map(jnp.squeeze, jnp.split(x, 3, axis=-1)))
+        rgb_tuple = tuple(jax.tree.map(jnp.squeeze, jnp.split(x, 3, axis=-1)))
         if shuffle:
             order = jax.random.permutation(perm_rng, jnp.arange(4, dtype=jnp.int32))
         else:
@@ -293,7 +313,11 @@ def color_transform(
 
     out_apply = _color_jitter(image)
     out_apply = jax.lax.cond(
-        should_apply & should_apply_gs, out_apply, _to_grayscale, out_apply, lambda x: x
+        should_apply & should_apply_gs,
+        out_apply,
+        _to_grayscale,
+        out_apply,
+        lambda x: x,
     )
     return jnp.clip(out_apply, 0.0, 1.0)
 
@@ -309,6 +333,7 @@ def gaussian_blur(
     image, rng, *, blur_divider=10.0, sigma_min=0.1, sigma_max=2.0, apply_prob=1.0
 ):
     """Applies gaussian blur to a batch of images.
+
     Args:
         images: an NHWC tensor, with C=3.
         rng: a single PRNGKey.
@@ -316,6 +341,7 @@ def gaussian_blur(
         sigma_min: the minimum value for sigma in the blurring kernel.
         sigma_max: the maximum value for sigma in the blurring kernel.
         apply_prob: the probability of applying the transform to a batch element.
+
     Returns:
         A NHWC tensor of the blurred images.
     """

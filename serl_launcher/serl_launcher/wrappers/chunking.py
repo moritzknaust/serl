@@ -1,15 +1,14 @@
 from collections import deque
-from typing import Optional
+from typing import Optional, Union
 
-import gym
-import gym.spaces
+import gymnasium as gym
 import jax
 import numpy as np
 
 
 def stack_obs(obs):
     dict_list = {k: [dic[k] for dic in obs] for k in obs[0]}
-    return jax.tree_map(
+    return jax.tree.map(
         lambda x: np.stack(x), dict_list, is_leaf=lambda x: isinstance(x, list)
     )
 
@@ -32,15 +31,20 @@ def space_stack(space: gym.Space, repeat: int):
 
 
 class ChunkingWrapper(gym.Wrapper):
-    """
-    Enables observation histories and receding horizon control.
+    """Enables observation histories and receding horizon control.
 
-    Accumulates observations into obs_horizon size chunks. Starts by repeating the first obs.
+    Accumulates observations into obs_horizon size chunks. Starts by repeating the
+    first obs.
 
     Executes act_exec_horizon actions in the environment.
     """
 
-    def __init__(self, env: gym.Env, obs_horizon: int, act_exec_horizon: Optional[int]):
+    def __init__(
+        self,
+        env: Union[gym.Env, gym.Wrapper],
+        obs_horizon: int,
+        act_exec_horizon: Optional[int],
+    ):
         super().__init__(env)
         self.env = env
         self.obs_horizon = obs_horizon
@@ -72,6 +76,10 @@ class ChunkingWrapper(gym.Wrapper):
         return (stack_obs(self.current_obs), reward, done, trunc, info)
 
     def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
+        obs, info = self.env.reset()
         self.current_obs.extend([obs] * self.obs_horizon)
         return stack_obs(self.current_obs), info
+
+    @property
+    def chunking_enabled(self):
+        return True
