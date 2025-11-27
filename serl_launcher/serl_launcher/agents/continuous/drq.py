@@ -1,18 +1,17 @@
-import copy
 from collections import OrderedDict
+import copy
 from functools import partial
 from typing import Dict, Iterable, Optional, Tuple
 
+from flax.core import frozen_dict
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-from flax.core import frozen_dict
-
 from serl_launcher.agents.continuous.sac import SACAgent
 from serl_launcher.common.common import JaxRLTrainState, ModuleDict, nonpytree_field
 from serl_launcher.common.encoding import EncodingWrapper
 from serl_launcher.common.optimizers import make_optimizer
-from serl_launcher.common.typing import Batch, Data, Params, PRNGKey
+from serl_launcher.common.typing import Batch, Data, PRNGKey, Params
 from serl_launcher.networks.actor_critic_nets import Critic, Policy, ensemblize
 from serl_launcher.networks.lagrange import GeqLagrangeMultiplier
 from serl_launcher.networks.mlp import MLP
@@ -21,6 +20,7 @@ from serl_launcher.vision.data_augmentations import batched_random_crop
 
 
 class DrQAgent(SACAgent):
+
     @classmethod
     def create(
         cls,
@@ -125,11 +125,10 @@ class DrQAgent(SACAgent):
         critic_subsample_size: Optional[int] = None,
         temperature_init: float = 1.0,
         image_keys: Iterable[str] = ("image",),
+        enable_stacking: bool = True,
         **kwargs,
     ):
-        """
-        Create a new pixel-based agent, with no encoders.
-        """
+        """Create a new pixel-based agent, with no encoders."""
 
         policy_network_kwargs["activate_final"] = True
         critic_network_kwargs["activate_final"] = True
@@ -182,13 +181,33 @@ class DrQAgent(SACAgent):
                 )
                 for image_key in image_keys
             }
+        elif encoder_type == "resnet-pretrained-18":
+            from serl_launcher.vision.resnet_v1 import (
+                PreTrainedResNetEncoder,
+                resnetv1_configs,
+            )
+
+            pretrained_encoder = resnetv1_configs["resnetv1-18-frozen"](
+                pre_pooling=True,
+                name="pretrained_encoder",
+            )
+            encoders = {
+                image_key: PreTrainedResNetEncoder(
+                    pooling_method="spatial_learned_embeddings",
+                    num_spatial_blocks=8,
+                    bottleneck_dim=256,
+                    pretrained_encoder=pretrained_encoder,
+                    name=f"encoder_{image_key}",
+                )
+                for image_key in image_keys
+            }
         else:
             raise NotImplementedError(f"Unknown encoder type: {encoder_type}")
 
         encoder_def = EncodingWrapper(
             encoder=encoders,
             use_proprio=use_proprio,
-            enable_stacking=True,
+            enable_stacking=enable_stacking,
             image_keys=image_keys,
         )
 
@@ -238,15 +257,26 @@ class DrQAgent(SACAgent):
             from serl_launcher.utils.train_utils import load_resnet10_params
 
             agent = load_resnet10_params(agent, image_keys)
+        elif (
+            encoder_type == "resnet-pretrained-18"
+        ):  # load pretrained weights for ResNet-18
+            from serl_launcher.utils.train_utils import load_resnet18_params
+
+            agent = load_resnet18_params(agent, image_keys)
 
         return agent
 
     def data_augmentation_fn(self, rng, observations):
         for pixel_key in self.config["image_keys"]:
+            # 3 for (image_width, image_height, image_channels)
+            num_batch_dims = len(observations[pixel_key].shape) - 3
             observations = observations.copy(
                 add_or_replace={
                     pixel_key: batched_random_crop(
-                        observations[pixel_key], rng, padding=4, num_batch_dims=2
+                        observations[pixel_key],
+                        rng,
+                        padding=4,
+                        num_batch_dims=num_batch_dims,
                     )
                 }
             )
@@ -260,8 +290,7 @@ class DrQAgent(SACAgent):
         utd_ratio: int,
         pmap_axis: Optional[str] = None,
     ) -> Tuple["DrQAgent", dict]:
-        """
-        Fast JITted high-UTD version of `.update`.
+        """Fast JITted high-UTD version of `.update`.
 
         Splits the batch into minibatches, performs `utd_ratio` critic
         (and target) updates, and then one actor/temperature update.

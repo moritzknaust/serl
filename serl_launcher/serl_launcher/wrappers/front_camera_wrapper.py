@@ -1,10 +1,10 @@
-import gym
-from gym.core import Env
 from copy import deepcopy
+import gymnasium as gym
 
 
 class FrontCameraWrapper(gym.ObservationWrapper):
-    def __init__(self, env: Env):
+
+    def __init__(self, env: gym.core.Env):
         super().__init__(env)
         front_obs_space = {
             k: space for k, space in self.observation_space.items() if "wrist" not in k

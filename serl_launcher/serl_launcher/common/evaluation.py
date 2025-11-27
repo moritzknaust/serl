@@ -1,13 +1,16 @@
-import math
 from collections import defaultdict
+import math
 from typing import Dict
 
-import gym
+import gymnasium as gym
 import jax
 import numpy as np
 
 
-def supply_rng(f, rng=jax.random.PRNGKey(0)):
+def supply_rng(f, rng=None):
+    if rng is None:
+        rng = jax.random.PRNGKey(0)
+
     def wrapped(*args, **kwargs):
         nonlocal rng
         rng, key = jax.random.split(rng)
@@ -48,14 +51,26 @@ def add_to(dict_of_lists, single_dict):
 
 def evaluate(policy_fn, env: gym.Env, num_episodes: int) -> Dict[str, float]:
     stats = defaultdict(list)
-    for _ in range(num_episodes):
-        observation, info = env.reset()
+    for i in range(num_episodes):
+        print(f"Start eval traj {i+1} of {num_episodes}")
+        try:
+            observation, info = env.reset()
+        except Exception as e:
+            print(f"Failed to reset env: {e}")
+            env.close()
+            raise
         add_to(stats, flatten(info))
         done = False
         while not done:
             action = policy_fn(observation)
-            observation, _, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
+            try:
+                next_obs, reward, done, truncated, info = env.step(action)
+            except:
+                print("Failed to step env")
+                env.close()
+                raise
+            observation = next_obs
+            done = done or truncated
             add_to(stats, flatten(info))
         add_to(stats, flatten(info, parent_key="final"))
 
@@ -184,6 +199,8 @@ def parallel_evaluate(policy_fn, eval_envs, num_eval, verbose=True):
                 counter[n] += 1
     if verbose:
         print(
-            f"Evaluation using {len(eval_episode_rewards)} episodes: mean reward {np.mean(eval_episode_rewards):.5f} +- {bootstrap_std(eval_episode_rewards):.5f} \n"
+            f"Evaluation using {len(eval_episode_rewards)} episodes: mean reward"
+            f" {np.mean(eval_episode_rewards):.5f} +-"
+            f" {bootstrap_std(eval_episode_rewards):.5f} \n"
         )
     return eval_episode_rewards, eval_episode_time_rewards
